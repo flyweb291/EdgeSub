@@ -1,41 +1,63 @@
 export class Dropdown extends HTMLElement {
-    selectedValue: string = this.dataset.selectedValue;
     constructor () {
         super();
-
-        this.Elements.DropdownBotton.addEventListener("click", () => {
-            this.dataset.onfocus = 
-                this.dataset.onfocus === "false"
-                 ? "true"
-                 : "false"
-        }) 
-
-        for (let i of this.Elements.Items) {
-            i.addEventListener("click", (event) => {
-                const TargetElement = event.target as HTMLElement;
-                for (let i of this.Elements.Items) {
-                    i.dataset.selected = "false"
-                }
-                TargetElement.dataset.selected = "true";
-                this.Elements.DropdownBottonText.innerText = TargetElement.innerText;
-                this.selectedValue = TargetElement.dataset.value;
-                this.dataset.selectedValue = this.selectedValue;
-                this.dispatchEvent(
-                    new CustomEvent("DropdownSelect", { 
-                        detail: {
-                            selectedValue: this.selectedValue
-                        }
-                    })
-                )
-            })
-
-        }
+        
+        this.initializeElements();
+        this.setupEventListeners();
     }
-    Elements = {
-        DropdownBotton: this.querySelector("button") as HTMLElement,
-        DropdownBottonText: this.querySelector("button > span") as HTMLElement,
-        Items: this.querySelectorAll(".dropdown-content > button") as unknown as HTMLButtonElement[]
+
+    private initializeElements() {
+        this.Elements = {
+            DropdownBotton: this.querySelector("div.btn") as HTMLElement,
+            DropdownBottonText: this.querySelector("div.btn > span") as HTMLElement,
+            Items: this.querySelectorAll(".dropdown-content > li > a") as NodeListOf<HTMLButtonElement>
+        };
+    }
+
+    private setupEventListeners() {
+        this.Elements.Items.forEach(item => {
+            item.addEventListener("click", (event) => {
+                const targetElement = event.target as HTMLElement;
+                this.select(targetElement.dataset.value);
+            });
+        });
+    }
+
+    public select(value: string) {
+        if (!value) {
+            console.error("[k-dropdown.select] value is required")
+            return false;
+        };
+
+        this.dataset.selectedValue = value;
+        
+        // mark the selected
+        this.Elements.Items.forEach(item => {
+            if (item.dataset.value === value) {
+                item.classList.add("menu-active")
+                this.Elements.DropdownBottonText.innerText = item.innerText;
+            } else {
+                // cancel non-targets out
+                item.classList.remove("menu-active")
+            }
+        });
+
+        // dispatch custom event to notify
+        this.dispatchEvent(new CustomEvent("dropdown-select", {
+            bubbles: true,
+            composed: true,
+            detail: {
+                value,
+            }
+        }));
+    }
+
+    Elements: {
+        DropdownBotton: HTMLElement;
+        DropdownBottonText: HTMLElement;
+        Items: NodeListOf<HTMLButtonElement>;
     }
 }
+
 customElements.define("k-dropdown", Dropdown);
 console.info("[k-dropdown] registered")

@@ -4,13 +4,23 @@ import { DefaultRequestHeaders } from "./configs";
 
 import { ShareLinkParser } from "./Parsers/share-link";
 import { ClashMetaParser } from "./Parsers/clash-meta";
+import { SingBoxParser } from "./Parsers/sing-box";
 
 import Yaml from "js-yaml";
 import { TrulyAssign } from "./utils/TrulyAssign";
+import { parseContentDisposition } from "./utils/parseContentDisposition";
 
 type SubURL = string; // start with `short:`, `http(s)://`, or sth like `[proxy protocol]://`
 type SubURLs = string; // contains SubURL a lot
 type SubURLArr = SubURL[]; // usually it is some SubURLs squeeze into a Array.
+type ParsedSubscription = {
+    data: any[];
+    SubscriptionUserInfo?: SubscriptionUserInfo;
+};
+type SubscriptionUserInfo = {
+    traffic?: string; // e.g. 'upload=<bytes>; download=<bytes>; total=<bytes>; expire=<timestamp>', from `subscription-userinfo` header
+    name?: string; // e.g. 'Nexitally', from `content-disposition` header filename field.
+}
 
 /**
  * 
@@ -29,30 +39,39 @@ export default async function getParsedSubData (
     const RequestHeaders = TrulyAssign(DefaultRequestHeaders, CustomHTTPHeaders);
 
     let SubURLArr = SubURLs.replaceAll("\r", "\n").split("\n").filter((i) => !!i).map(i => encodeURIComponent(i.trim())).map(i => decodeURIComponent(i)) as SubURLArr;
-    let ParsedData = [];
+    let Proxies = [],
+        SubscriptionUserInfos: SubscriptionUserInfo[] = [];
     for (let i in SubURLArr) {
         console.info(`[Fetch Sub Data] Fetching ${parseInt(i) + 1}/${SubURLArr.length}`)
-        ParsedData = [...ParsedData, ...(await ParseSubData(SubURLArr[i], EdgeSubDB, RequestHeaders))]
+        const ParsedSubscription = await ParseSubData(SubURLArr[i], EdgeSubDB, RequestHeaders);
+        Proxies = [...Proxies, ...ParsedSubscription.data];
+        if (ParsedSubscription.SubscriptionUserInfo) {
+            SubscriptionUserInfos.push(ParsedSubscription.SubscriptionUserInfo);
+        }
     }
 
     if (isShowHost === true) {
-        ParsedData = ParsedData.map(i => {
+        Proxies = Proxies.map(i => {
             i.__Remark = `${i.__Remark} - ${i.Hostname}:${i.Port}`
             return i;
         })
     }
 
     console.info(`[Fetch Sub Data] Job done, wasting ${performance.now() - __startTime}ms.`)
-    return ParsedData;
+    return {Proxies, SubscriptionUserInfos};
 }
-async function ParseSubData (SubURL: SubURL, EdgeSubDB, RequestHeaders) {
+async function ParseSubData (SubURL: SubURL, EdgeSubDB, RequestHeaders) : Promise<ParsedSubscription> {
+
+    // pre define SubscriptionUserInfo
+    let SubscriptionUserInfo: SubscriptionUserInfo;
+
     // handle `short` here
     if (SubURL.match(/^short:/i)) {
         let ShortData: SubURLs = await EdgeSubDB.get(SubURL).then(res => JSON.parse(res).subdata);
         console.info(`[Fetch Sub Data] starting sub task for ${SubURL}`)
-        let ParsedShortData = await getParsedSubData(ShortData, EdgeSubDB, RequestHeaders);
+        let ParsedShortData = (await getParsedSubData(ShortData, EdgeSubDB, RequestHeaders)).Proxies;
         console.info(`[Fetch Sub Data] sub task for ${SubURL} done`)
-        return ParsedShortData;
+        return { data: ParsedShortData };
     }
 
     let SubData;
@@ -64,11 +83,22 @@ async function ParseSubData (SubURL: SubURL, EdgeSubDB, RequestHeaders) {
         }
     } else {
         SubData = await fetch(SubURL, { headers: RequestHeaders })
-            .then(async res => await res.text())
+            .then(async res => { 
+                console.info(`[Fetch Sub Data] Response status code ${res.status}`);
+                return {
+                    data: await res.text(),
+                    headers: res.headers
+                }
+            })
             .then(res => {
+                // fill out SubscriptionUserInfo
+                SubscriptionUserInfo = {
+                    traffic: res.headers.has("Subscription-UserInfo") ? res.headers.get("Subscription-UserInfo") : null,
+                    name: res.headers.has("Content-Disposition") ? parseContentDisposition(res.headers.get("Content-Disposition")) : null
+                };
                 // try decode as yaml, for clash-meta config
                 try {
-                    let YamlData = Yaml.load(res) as ClashMetaConfig;
+                    let YamlData = Yaml.load(res.data) as ClashMetaConfig;
                     if (YamlData.proxies) {
                         return {
                             type: "clash-meta",
@@ -76,12 +106,24 @@ async function ParseSubData (SubURL: SubURL, EdgeSubDB, RequestHeaders) {
                         }
                     }
                 } catch (e) {
-                    console.warn(`[Fetch Sub Data] try parse as yaml: ${e}, skipping...`)
+                    console.warn(`[Fetch Sub Data] Err when try parse as yaml: ${e}, skipping...`)
+                }
+                // try decode as json, for sing-box config
+                try {
+                    let SingBoxConfig = JSON.parse(res.data);
+                    if (SingBoxConfig.outbounds) {
+                        return {
+                            type: "sing-box",
+                            data: SingBoxConfig
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[Fetch Sub Data] Err when try parse as JSON (sing-box): ${e}, skipping...`)
                 }
 
                 // try decode as base64 endoded share-links
                 try {
-                    let decodedData = atob(res.trim());
+                    let decodedData = atob(res.data.trim());
                     if (!decodedData.match(/\:\/\//gi)) {
                         throw "seems like base64 decoded data malformed"
                     }
@@ -96,7 +138,7 @@ async function ParseSubData (SubURL: SubURL, EdgeSubDB, RequestHeaders) {
                 // final return as share-link
                 return {
                     type: "share-link",
-                    data: res
+                    data: res.data
                 }
             })
     }
@@ -124,7 +166,18 @@ async function ParseSubData (SubURL: SubURL, EdgeSubDB, RequestHeaders) {
                 ParsedSubData.push(Parser[i.type](i))
             }
         }
+    } else if (SubData.type === "sing-box") {
+        let { outbounds } = SubData.data;
+        let Parser = new SingBoxParser();
+        for (let i of outbounds) {
+            if (Parser.__validate(i)) {
+                ParsedSubData.push(Parser[i.type](i))
+            }
+        }
     }
     
-    return ParsedSubData;
+    return {
+        data: ParsedSubData,
+        SubscriptionUserInfo,
+    };
 }

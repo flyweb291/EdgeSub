@@ -1,0 +1,46 @@
+---
+import DataInput from "@components/data-input.astro";
+import { Icon } from "astro-icon/components";
+---
+
+<short-token-reset class="flex-contents">
+    <DataInput
+        slug="slug"
+        desc="Short ID"
+        detail="Short ID"
+        type="input"
+    />
+    <DataInput
+        slug="old-token"
+        desc="Old Token"
+        detail="OLD Short token"
+        type="input"
+    />
+    <DataInput
+        slug="new-token"
+        desc="New Token"
+        detail="NEW Short token"
+        type="input"
+    />
+    
+    <div class="mockup-code w-full my-2">
+        <pre data-prefix="~"><code>请先提交</code></pre>
+    </div>
+
+    <button class="btn" id="submit">
+        <label class="swap swap-rotate">
+            <div class="swap-on">
+                <!-- loading -->
+                <span class="loading loading-spinner loading-md"></span>
+            </div>
+            <div class="swap-off">
+                <!-- not loading -->
+                <Icon name="iconoir:send" class="text-xl inline" />
+            </div>
+        </label>
+        <span>Submit</span>
+    </button>
+
+</short-token-reset>
+
+<script src="@scripts/components/shorter/short-token-reset.ts"></script>

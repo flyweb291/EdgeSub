@@ -1,17 +1,55 @@
 ---
-import KForm from "@components/k-form.astro";
+import DataInput from "@components/data-input.astro";
+import { Icon } from "astro-icon/components";
 ---
 
-<h2>List all the shorts</h2>
 <shorter-list class="flex-contents">
-    <KForm
+    <DataInput
         slug="password"
-        desc="Password"
-        detail="Password"
+        desc="Admin password"
+        detail="Admin password"
         type="input"
     />
-    <code id="list-status">Submit first.</code>
-    <button id="list-submit">Submit</button>
-</div>
 
-<script src="@scripts/components/shorter-list.ts"></script>
+    <button class="btn" id="list-submit">
+        <label class="swap swap-rotate">
+            <div class="swap-on">
+                <!-- loading -->
+                <span class="loading loading-spinner loading-md"></span>
+            </div>
+            <div class="swap-off">
+                <!-- not loading -->
+                <Icon name="iconoir:send-diagonal" class="text-xl inline" />
+            </div>
+        </label>
+        <span>Fetch</span>
+    </button>
+
+    <div id="list-items" class="flex flex-row flex-wrap gap-4 justify-center">
+        <list-item class="hidden">
+            <div class="card bg-neutral text-neutral-content w-96">
+                <div class="card-body items-center text-center">
+                    <p>
+                        <Icon class="inline" name="iconoir:info-circle" /> Short
+                        ID: <code class="item-id">cry_me_a_r1ver</code>
+                    </p>
+                    <p>
+                        <Icon class="inline" name="iconoir:edit" /> Last modified:
+                        <span class="item-date">11011111101010010</span>
+                    </p>
+
+                    <div class="card-actions justify-end">
+                        <button class="btn item-edit">
+                            <Icon name="iconoir:edit" /> Edit
+                        </button>
+                        <button class="btn item-copy">
+                            <Icon name="iconoir:copy" /> Copy ID
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </list-item>
+    </div>
+</shorter-list>
+
+<script src="@scripts/components/shorter/shorter-list"></script>

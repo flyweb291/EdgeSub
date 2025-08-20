@@ -3,26 +3,15 @@ import getParsedSubData from "../internal/getParsedSubData.ts";
 import Yaml from "js-yaml";
 
 
-export async function onRequest (context, isClashOriginal = false) {
+export async function onRequest (context) {
     const { request } = context;
     const URLObject = new URL(request.url);
-    let Proxies = await getParsedSubData(
+    let { Proxies, SubscriptionUserInfos } = await getParsedSubData(
         URLObject.searchParams.get("url"), 
         context.env.EdgeSubDB, 
         URLObject.searchParams.get("show_host") === "true",
         JSON.parse(URLObject.searchParams.get("http_headers")),
     );
-    
-    // process proxies if its a clash original request.
-    if (isClashOriginal === true) {
-        const ClashSupportedProxyType = ["trojan", "vmess", "ss", "ssr", "http", "socks5" /* "snell" */];
-
-        console.info(`[Main] It's a Clash Original Config request!, \nfiltering out these: ${ClashSupportedProxyType.join(", ")}`)
-
-        // filter the proxies
-        Proxies = Proxies.filter( i => ClashSupportedProxyType.includes(i.__Type) )
-    }
-
     // a javascript object !!! not YAML !!!
     let ClashMetaConfigObject = await getClashMetaConfig (
         Proxies,
@@ -31,8 +20,9 @@ export async function onRequest (context, isClashOriginal = false) {
             isUDP: URLObject.searchParams.get("udp") === "true",
             isSSUoT: URLObject.searchParams.get("ss_uot") === "true",
             isInsecure: true,
-            RemoteConfig: URLObject.searchParams.get("remote_config") || "__DEFAULT__",
-            isForcedRefresh: URLObject.searchParams.get("forced_refresh") === "true" ? true : false
+            RuleProvider: URLObject.searchParams.get("remote_config") || "__DEFAULT",
+            RuleProvidersProxy: URLObject.searchParams.get("rule_providers_proxy"),
+            isForcedRefresh: URLObject.searchParams.get("forced_refresh") === "true",
         }
     )
 
@@ -48,13 +38,34 @@ export async function onRequest (context, isClashOriginal = false) {
         }
     }
 
-    const ResponseBody = Yaml.dump(ClashMetaConfigObject)
-
-    return new Response(ResponseBody, {
-        status: 200,
-        headers: {
-            "Content-Type": "text/plain; charset=utf-8",
-            "Content-Length": ResponseBody.length
+    const ResponseBody = Yaml.dump(ClashMetaConfigObject);
+    const response = new Response(
+        ResponseBody, 
+        {
+            status: 200,
+            headers: {
+                "Content-Type": "text/plain; charset=utf-8",
+                "Content-Length": ResponseBody.length,
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            }
         }
-    })
+    )
+
+    if (SubscriptionUserInfos.length > 0) {
+        let Names = SubscriptionUserInfos.map(i => i.name).filter(i => !!i);
+        // two name, then eclipse...
+        let NamesLimit = Names.length > 2 ? 2 : Names.length;
+        let Filename = `${Names.slice(0, NamesLimit).join(", ")}, and ${SubscriptionUserInfos.length - NamesLimit} more`;
+        response.headers.set("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(Filename)}.yaml`);
+
+        let Traffic = SubscriptionUserInfos.map(i => i.traffic).filter(i => !!i)[0]; // first element of SubscriptionUserInfos
+        // if Names.length > 1, then we shouldn't use such per-profile specific traffic values.
+        if (Names.length === 1) {
+            response.headers.set("Subscription-UserInfo", Traffic);
+        }
+    }
+    
+    return response;
 }

@@ -1,10 +1,10 @@
-import { getSingBoxConfig } from "../internal/Converter/getSingBoxConfig.js";
+import { getSingBoxConfig } from "../internal/Converter/getSingBoxConfig.ts";
 import getParsedSubData from "../internal/getParsedSubData.ts";
 
 export async function onRequest (context) {
     const { request } = context;
     const URLObject = new URL(request.url);
-    let Proxies = await getParsedSubData(
+    let { Proxies } = await getParsedSubData(
         URLObject.searchParams.get("url"), 
         context.env.EdgeSubDB, 
         URLObject.searchParams.get("show_host") === "true",
@@ -19,7 +19,8 @@ export async function onRequest (context) {
             isUDP: URLObject.searchParams.get("udp") === "true",
             isSSUoT: URLObject.searchParams.get("ss_uot") === "true",
             isInsecure: true,
-            RemoteConfig: URLObject.searchParams.get("remote_config") || "__DEFAULT__",
+            RuleProvider: URLObject.searchParams.get("remote_config") || "__DEFAULT",
+            RuleProvidersProxy: URLObject.searchParams.get("rule_providers_proxy"),
             isForcedRefresh: URLObject.searchParams.get("forced_refresh") === "true" ? true : false
         }
     )
